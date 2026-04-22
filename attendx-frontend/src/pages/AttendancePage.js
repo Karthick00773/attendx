@@ -1,9 +1,150 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import './AttendancePage.css';
 
 function formatHrs(h) { return h != null ? Number(h).toFixed(2) + 'h' : '—'; }
 
+/* ─── Camera Modal ──────────────────────────────────────────────── */
+function CameraModal({ mode, onCapture, onCancel }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+  const [captured, setCaptured] = useState(null);
+  const [camError, setCamError] = useState('');
+  const [ready, setReady] = useState(false);
+
+  // Start camera
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false,
+        });
+        if (!active) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => setReady(true);
+        }
+      } catch (e) {
+        setCamError('Camera access denied. Please allow camera permission and try again.');
+      }
+    })();
+    return () => {
+      active = false;
+      streamRef.current?.getTracks().forEach(t => t.stop());
+    };
+  }, []);
+
+  const handleCapture = () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    setCaptured(canvas.toDataURL('image/jpeg', 0.85));
+  };
+
+  const handleRetake = () => setCaptured(null);
+
+  const handleConfirm = () => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    onCapture(captured);
+  };
+
+  const handleCancel = () => {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    onCancel();
+  };
+
+  return (
+    <div className="cam-overlay" onClick={(e) => e.target === e.currentTarget && handleCancel()}>
+      <div className="cam-modal">
+        <div className="cam-modal-header">
+          <div className="cam-modal-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+            </svg>
+            {mode === 'in' ? 'Check-In Photo' : 'Check-Out Photo'}
+          </div>
+          <button className="cam-close-btn" onClick={handleCancel}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        <div className="cam-body">
+          {camError ? (
+            <div className="cam-error">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <p>{camError}</p>
+            </div>
+          ) : (
+            <>
+              <div className="cam-viewfinder" style={{ display: captured ? 'none' : 'block' }}>
+                {!ready && (
+                  <div className="cam-loading">
+                    <svg className="spin-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                    <span>Starting camera…</span>
+                  </div>
+                )}
+                <video ref={videoRef} autoPlay playsInline muted className="cam-video" style={{ opacity: ready ? 1 : 0 }} />
+                <div className="cam-face-guide" />
+              </div>
+
+              {captured && (
+                <div className="cam-preview">
+                  <img src={captured} alt="Captured" className="cam-preview-img" />
+                  <div className="cam-preview-badge">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    Photo captured
+                  </div>
+                </div>
+              )}
+
+              <canvas ref={canvasRef} style={{ display: 'none' }} />
+            </>
+          )}
+        </div>
+
+        {!camError && (
+          <div className="cam-footer">
+            {!captured ? (
+              <>
+                <button className="btn btn-outline" onClick={handleCancel}>Cancel</button>
+                <button className="btn btn-primary cam-capture-btn" onClick={handleCapture} disabled={!ready}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3"/><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  Capture Photo
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="btn btn-outline" onClick={handleRetake}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.6"/>
+                  </svg>
+                  Retake
+                </button>
+                <button className="btn btn-primary" onClick={handleConfirm}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  {mode === 'in' ? 'Confirm & Check In' : 'Confirm & Check Out'}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main Page ─────────────────────────────────────────────────── */
 export default function AttendancePage() {
   const {
     currentUser,
@@ -19,6 +160,8 @@ export default function AttendancePage() {
   const [breakLoading, setBreakLoading] = useState(false);
   const [msg, setMsg] = useState('');
   const [error, setError] = useState('');
+  // Camera modal state: null | 'in' | 'out'
+  const [cameraMode, setCameraMode] = useState(null);
 
   useEffect(() => {
     fetchTodayAttendance();
@@ -26,12 +169,14 @@ export default function AttendancePage() {
     fetchMonthlySummary();
   }, [fetchTodayAttendance, fetchAttendanceHistory, fetchMonthlySummary]);
 
-  const handleCheckIn = async () => {
+  // Called after user confirms photo for check-in
+  const handleCheckInPhoto = async (photoDataUrl) => {
+    setCameraMode(null);
     setCheckingIn(true);
     setMsg('Getting your location…');
     setError('');
     try {
-      await checkIn();
+      await checkIn(photoDataUrl);
       setMsg('');
     } catch (err) {
       setError(err.message || 'Check-in failed.');
@@ -41,12 +186,14 @@ export default function AttendancePage() {
     }
   };
 
-  const handleCheckOut = async () => {
+  // Called after user confirms photo for check-out
+  const handleCheckOutPhoto = async (photoDataUrl) => {
+    setCameraMode(null);
     setCheckingOut(true);
     setMsg('Calculating hours…');
     setError('');
     try {
-      await checkOut();
+      await checkOut(photoDataUrl);
       setMsg('');
     } catch (err) {
       setError(err.message || 'Check-out failed.');
@@ -86,6 +233,15 @@ export default function AttendancePage() {
 
   return (
     <div className="page animate-fadeup">
+      {/* Camera Modal */}
+      {cameraMode && (
+        <CameraModal
+          mode={cameraMode}
+          onCapture={cameraMode === 'in' ? handleCheckInPhoto : handleCheckOutPhoto}
+          onCancel={() => setCameraMode(null)}
+        />
+      )}
+
       <div className="page-header">
         <div>
           <h2 className="page-title">Attendance</h2>
@@ -114,6 +270,9 @@ export default function AttendancePage() {
             </svg>
             <span className="attend-time-label">Check-In</span>
             <span className="attend-time-val">{fmtTime(today?.check_in_time)}</span>
+            {today?.check_in_photo_url && (
+              <img src={today.check_in_photo_url} alt="check-in selfie" className="attend-today-photo" />
+            )}
           </div>
           <div className="attend-time-divider">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -126,6 +285,9 @@ export default function AttendancePage() {
             </svg>
             <span className="attend-time-label">Check-Out</span>
             <span className="attend-time-val">{fmtTime(today?.check_out_time)}</span>
+            {today?.check_out_photo_url && (
+              <img src={today.check_out_photo_url} alt="check-out selfie" className="attend-today-photo" />
+            )}
           </div>
         </div>
 
@@ -160,11 +322,17 @@ export default function AttendancePage() {
 
         <div className="attend-actions">
           {!today && (
-            <button className="btn btn-primary btn-lg attend-btn" onClick={handleCheckIn} disabled={checkingIn}>
+            <button
+              className="btn btn-primary btn-lg attend-btn"
+              onClick={() => setCameraMode('in')}
+              disabled={checkingIn}
+            >
               {checkingIn ? (
                 <svg className="spin-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
               ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+                </svg>
               )}
               {checkingIn ? 'Checking In…' : '✓ Check In'}
             </button>
@@ -182,11 +350,17 @@ export default function AttendancePage() {
                   <><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Take Break</>
                 )}
               </button>
-              <button className="btn btn-danger btn-lg attend-btn" onClick={handleCheckOut} disabled={checkingOut}>
+              <button
+                className="btn btn-danger btn-lg attend-btn"
+                onClick={() => setCameraMode('out')}
+                disabled={checkingOut}
+              >
                 {checkingOut ? (
                   <svg className="spin-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
                 ) : (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+                  </svg>
                 )}
                 {checkingOut ? 'Checking Out…' : '← Check Out'}
               </button>
