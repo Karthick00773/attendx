@@ -92,15 +92,13 @@ export function AppProvider({ children }) {
     return data.summary;
   }, []);
 
-  const fetchAllEmployeesToday = useCallback(async () => {
-    const data = await api.attendance.getAllToday();
-    setAllEmployeesToday(data.employees || []);
-    return data.employees;
-  }, []);
-
-  const checkIn = async (photoFile) => {
+  const checkIn = async (photoDataUrl) => {
     const formData = new FormData();
-    if (photoFile) formData.append('photo', photoFile);
+    if (photoDataUrl) {
+      const res = await fetch(photoDataUrl);
+      const blob = await res.blob();
+      formData.append('photo', blob, 'checkin.jpg');
+    }
     const coords = await getCoords();
     if (coords) {
       formData.append('lat', coords.latitude);
@@ -110,10 +108,13 @@ export function AppProvider({ children }) {
     setTodayRecord(data.attendance);
     return data;
   };
-
-  const checkOut = async (photoFile) => {
+  const checkOut = async (photoDataUrl) => {
     const formData = new FormData();
-    if (photoFile) formData.append('photo', photoFile);
+    if (photoDataUrl) {
+      const res = await fetch(photoDataUrl);
+      const blob = await res.blob();
+      formData.append('photo', blob, 'checkout.jpg');
+    }
     const coords = await getCoords();
     if (coords) {
       formData.append('lat', coords.latitude);
@@ -240,7 +241,7 @@ export function AppProvider({ children }) {
       todayRecord, attendanceHistory, monthlySummary, activeBreak,
       fetchTodayAttendance, fetchAttendanceHistory, fetchMonthlySummary,
       checkIn, checkOut, startBreak, endBreak, overrideAttendance,
-      allEmployeesToday, fetchAllEmployeesToday,
+      allEmployeesToday, 
       dashboardStats, adminOverview, fetchDashboard, fetchAdminOverview,
       messages, fetchMessages, sendMessage, deleteMessage,
       leaveList, fetchLeaves, applyLeave, approveLeave, rejectLeave, cancelLeave,
